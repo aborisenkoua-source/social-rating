@@ -1086,6 +1086,6 @@ document.getElementById("btn-logout").addEventListener("click", async () => {
   else location.reload();
 });
 
-bindNav();
 ensureBottomNav();
+bindNav();
 if (SB) initAuth(); else startApp();
