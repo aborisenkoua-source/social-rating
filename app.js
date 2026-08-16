@@ -16,124 +16,10 @@
  */
 
 /* ============================================================
- * 1. КОНСТАНТЫ И SEED
+ * 1-2. КОНСТАНТЫ, SEED, МИГРАЦИЯ — вынесены в shared-logic.js
  * ============================================================ */
-const STORAGE_KEY = "socialRating.v2";
+const { STORAGE_KEY, KIND, DEFAULT_COLORS, uid, todayISO, shiftDateISO, fmtHuman, seedData, migrate, doneTaskIds } = SharedLogic;
 
-const KIND = { TASK: "task", CHECKPOINT: "checkpoint", PENALTY: "penalty", CUSTOM: "custom" };
-
-const DEFAULT_COLORS = ["#1f6feb", "#12b76a", "#f79009", "#7c3aed", "#e11d48", "#0891b2"];
-
-function uid(p = "id") {
-  return p + "_" + Math.random().toString(36).slice(2, 9) + Date.now().toString(36).slice(-4);
-}
-function pad2(n) { return String(n).padStart(2, "0"); }
-function todayISO(d = new Date()) {
-  return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`;
-}
-function isoFromDate(d) { return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`; }
-function parseISO(s) {
-  const [y, m, d] = s.split("-").map(Number);
-  return new Date(y, m - 1, d);
-}
-function shiftDateISO(iso, deltaDays) {
-  const d = parseISO(iso); d.setDate(d.getDate() + deltaDays);
-  return isoFromDate(d);
-}
-function fmtHuman(iso) {
-  const d = parseISO(iso);
-  const wd = ["воскресенье","понедельник","вторник","среда","четверг","пятница","суббота"][d.getDay()];
-  const mo = ["января","февраля","марта","апреля","мая","июня","июля","августа","сентября","октября","ноября","декабря"][d.getMonth()];
-  return `${wd}, ${d.getDate()} ${mo} ${d.getFullYear()}`;
-}
-
-function seedTasks() {
-  return [
-    { id: uid("t"), name: "Нет замечаний по части помощи", points: 2,   isDaily: true,  isMandatory: true,  kind: KIND.TASK, childId: null },
-    { id: uid("t"), name: "Сделаны упражнения",            points: 3,   isDaily: true,  isMandatory: false, kind: KIND.TASK, childId: null },
-    { id: uid("t"), name: "Посидел с Сашей",               points: 5,   isDaily: true,  isMandatory: false, kind: KIND.TASK, childId: null },
-    { id: uid("t"), name: "Сделал уроки вовремя",          points: 3,   isDaily: true,  isMandatory: false, kind: KIND.TASK, childId: null },
-    { id: uid("t"), name: "Вовремя лег спать",             points: 5,   isDaily: true,  isMandatory: false, kind: KIND.TASK, childId: null },
-    { id: uid("t"), name: "Летнее чтение",                 points: 2,   isDaily: true,  isMandatory: false, kind: KIND.TASK, childId: null },
-    { id: uid("t"), name: "Бег",                           points: 3,   isDaily: true,  isMandatory: false, kind: KIND.TASK, childId: null },
-    { id: uid("t"), name: "Отжимания",                     points: 3,   isDaily: true,  isMandatory: false, kind: KIND.TASK, childId: null },
-    { id: uid("t"), name: "Пострижены ногти",              points: 5,   isDaily: false, isMandatory: false, kind: KIND.TASK, childId: null },
-    { id: uid("t"), name: "Солгал/Схитрил",                points: -25, isDaily: false, isMandatory: false, kind: KIND.PENALTY, childId: null },
-    { id: uid("t"), name: "Зубы (не почистил/плохо почистил)", points: -5, isDaily: false, isMandatory: false, kind: KIND.PENALTY, childId: null },
-    { id: uid("t"), name: "Сделаны все ежедневные дела",   points: 2,   isDaily: true,  isMandatory: false, kind: KIND.CHECKPOINT, childId: null },
-  ];
-}
-function seedScales() {
-  return {
-    trust: [
-      { min: 0,   label: "Доверия нет, сидит по таймеру, который ставят родители" },
-      { min: 50,  label: "Может сам себе ставить таймер" },
-      { min: 100, label: "Таймер не нужен" },
-    ],
-    gadgetHours: [
-      { min: 0,   hours: 0 },
-      { min: 10,  hours: 1 },
-      { min: 20,  hours: 2 },
-      { min: 40,  hours: 3 },
-      { min: 80,  hours: 4 },
-      { min: 100, hours: null },
-    ],
-  };
-}
-function seedData() {
-  return {
-    version: 2,
-    children: [
-      { id: uid("c"), name: "Толя", color: DEFAULT_COLORS[0], hiddenTaskIds: [] },
-      { id: uid("c"), name: "Лёша", color: DEFAULT_COLORS[1], hiddenTaskIds: [] },
-    ],
-    tasks: seedTasks(),
-    log: {},
-    scales: seedScales(),
-    settings: {
-      selectedChildId: null,
-      dayDate: todayISO(),
-      calYear: new Date().getFullYear(),
-      calMonth: new Date().getMonth(),
-      calView: "month",
-    },
-  };
-}
-
-/* ============================================================
- * 2. ХРАНИЛИЩЕ + МИГРАЦИЯ v1 -> v2
- * ============================================================ */
-function migrate(data) {
-  if (!data.version || data.version < 2) {
-    const seed = seedData();
-    data.children ||= [];
-    for (const c of data.children) if (!c.hiddenTaskIds) c.hiddenTaskIds = [];
-    data.tasks ||= seed.tasks;
-    for (const t of data.tasks) if (t.childId === undefined) t.childId = null;
-    data.log ||= {};
-    for (const childId of Object.keys(data.log)) {
-      for (const dateISO of Object.keys(data.log[childId])) {
-        const day = data.log[childId][dateISO];
-        if (!day) continue;
-        if (day.finalized === undefined) day.finalized = false;
-        for (const e of (day.entries || [])) {
-          if (e.isDaily === undefined) {
-            const t = e.taskId ? data.tasks.find(x => x.id === e.taskId) : null;
-            e.isDaily = t ? !!t.isDaily : false;
-          }
-        }
-      }
-    }
-    data.scales ||= seed.scales;
-    data.settings ||= { selectedChildId: null };
-    data.settings.dayDate ||= todayISO();
-    data.settings.calYear ||= new Date().getFullYear();
-    data.settings.calMonth ||= new Date().getMonth();
-    data.settings.calView ||= "month";
-    data.version = 2;
-  }
-  return data;
-}
 function load() {
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
@@ -218,234 +104,38 @@ function save() {
 }
 
 /* ============================================================
- * 3. ВСПОМОГАТЕЛЬНЫЕ
+ * 3-6. ВСПОМОГАТЕЛЬНЫЕ, РАСЧЁТЫ, АВТО-ЧЕКПОИНТ/ШТРАФЫ, ДЕЙСТВИЯ
+ * Чистая логика — в shared-logic.js (принимает db первым параметром).
+ * Здесь — тонкие обёртки над глобальным DB + save()/render() там,
+ * где раньше это делали исходные функции.
  * ============================================================ */
-function ensureChild(id) { return DB.children.find(c => c.id === id); }
+// Обёртки над shared-logic.js (globalThis.SharedLogic) с глобальным DB —
+// весь остальной код app.js (render*) вызывает их так же, как раньше.
+const _shared = SharedLogic;
 function selectedChild() {
-  const c = ensureChild(DB.settings.selectedChildId);
+  const c = _shared.ensureChild(DB, DB.settings.selectedChildId);
   if (c) return c;
   if (DB.children[0]) { DB.settings.selectedChildId = DB.children[0].id; return DB.children[0]; }
   return null;
 }
-function dayOf(childId, dateISO) {
-  DB.log[childId] ||= {};
-  DB.log[childId][dateISO] ||= { entries: [], finalized: false };
-  return DB.log[childId][dateISO];
-}
-function taskById(id) { return DB.tasks.find(t => t.id === id); }
+function dayOf(childId, dateISO) { return _shared.dayOf(DB, childId, dateISO); }
+function taskById(id) { return _shared.taskById(DB, id); }
+function visibleTasks(childId) { return _shared.visibleTasks(DB, childId); }
+function mandatoryTasks(childId) { return _shared.mandatoryTasks(DB, childId); }
+function isDayFilled(childId, dateISO) { return _shared.isDayFilled(DB, childId, dateISO); }
+function totalScore(childId) { return _shared.totalScore(DB, childId); }
+function dayBreakdown(childId, dateISO) { return _shared.dayBreakdown(DB, childId, dateISO); }
+function trustLevel(score) { return _shared.trustLevel(DB, score); }
+function gadgetHours(score) { return _shared.gadgetHours(DB, score); }
 
-// видимые задачи ребёнка (общие не-скрытые + свои персональные), кроме чекпоинта
-function visibleTasks(childId) {
-  const child = ensureChild(childId);
-  const hidden = new Set(child?.hiddenTaskIds || []);
-  return DB.tasks.filter(t => {
-    if (t.childId && t.childId !== childId) return false;
-    if (!t.childId && hidden.has(t.id)) return false;
-    return true;
-  });
-}
-function checkpointTask(childId) {
-  return visibleTasks(childId).find(t => t.kind === KIND.CHECKPOINT)
-      || DB.tasks.find(t => t.kind === KIND.CHECKPOINT);
-}
-function mandatoryTasks(childId) {
-  return visibleTasks(childId).filter(t => t.isMandatory && t.isDaily && t.kind === KIND.TASK);
-}
-function doneTaskIds(day) {
-  const set = new Set();
-  for (const e of day.entries) if (e.taskId && !e.auto) set.add(e.taskId);
-  return set;
-}
-
-/* ============================================================
- * 4. РАСЧЁТЫ
- * ============================================================ */
-// заполнен ли день (есть ручная запись или закрыт)
-function isDayFilled(childId, dateISO) {
-  const day = (DB.log[childId] || {})[dateISO];
-  if (!day) return false;
-  if (day.finalized) return true;
-  return day.entries.some(e => !e.auto);
-}
-function lastFilledDate(childId) {
-  const dates = Object.keys(DB.log[childId] || {}).filter(d => isDayFilled(childId, d));
-  if (!dates.length) return null;
-  return dates.sort().reverse()[0];
-}
-
-// ИТОГ с учётом сгорания ежедневных (кап 100)
-function totalScore(childId) {
-  const last = lastFilledDate(childId);
-  let sum = 0;
-  const childLog = DB.log[childId] || {};
-  for (const dateISO of Object.keys(childLog)) {
-    const isLast = dateISO === last;
-    for (const e of childLog[dateISO].entries) {
-      if (e.kind === KIND.PENALTY) { sum += e.points; continue; }      // штрафы — навсегда
-      if (e.isDaily) { if (isLast) sum += e.points; continue; }        // ежедневные — только последний день
-      sum += e.points;                                                 // прочие — всегда
-    }
-  }
-  return Math.min(sum, 100);
-}
-
-// разбивка дня для календаря (все записи, факт дня)
-function dayBreakdown(childId, dateISO) {
-  const day = (DB.log[childId] || {})[dateISO];
-  let pos = 0, neg = 0;
-  if (day) for (const e of day.entries) {
-    if (e.points >= 0) pos += e.points; else neg += e.points;
-  }
-  return { pos, neg, total: pos + neg };
-}
-function dayScore(childId, dateISO) { return dayBreakdown(childId, dateISO).total; }
-
-function trustLevel(score) {
-  const arr = [...DB.scales.trust].sort((a, b) => b.min - a.min);
-  for (const r of arr) if (score >= r.min) return r.label;
-  return arr[arr.length - 1]?.label ?? "—";
-}
-function gadgetHours(score) {
-  const arr = [...DB.scales.gadgetHours].sort((a, b) => b.min - a.min);
-  for (const r of arr) if (score >= r.min) return r.hours;
-  return arr[arr.length - 1]?.hours ?? 0;
-}
-
-/* ============================================================
- * 5. АВТО-ЧЕКПОИНТ + АВТО-ШТРАФЫ
- * ============================================================ */
-function recalcCheckpoint(childId, dateISO) {
-  const day = dayOf(childId, dateISO);
-  const cp = checkpointTask(childId);
-  // удалить прежние записи чекпоинта (любые)
-  day.entries = day.entries.filter(e => e.kind !== KIND.CHECKPOINT);
-  if (!cp) return;
-  const done = doneTaskIds(day);
-  const allDone = mandatoryTasks(childId).every(t => done.has(t.id));
-  if (allDone) {
-    day.entries.push({
-      id: uid("e"), taskId: cp.id, name: cp.name, points: cp.points,
-      kind: KIND.CHECKPOINT, isDaily: true, ts: Date.now(), auto: true,
-    });
-  }
-}
-// перегенерация авто-штрафов за невыполненные обязательные (не меняет finalized)
-function regenAutoPenalties(childId, dateISO) {
-  const day = dayOf(childId, dateISO);
-  day.entries = day.entries.filter(e => !(e.auto && e.kind === KIND.PENALTY));
-  const done = doneTaskIds(day);
-  for (const t of mandatoryTasks(childId)) {
-    if (!done.has(t.id)) {
-      day.entries.push({
-        id: uid("e"), taskId: t.id,
-        name: `НЕ СДЕЛАНО: ${t.name} (−2×)`,
-        points: -2 * t.points, kind: KIND.PENALTY, isDaily: false,
-        ts: Date.now(), auto: true,
-      });
-    }
-  }
-}
-// полный пересчёт дня (вызывать после любого изменения записей)
-function recalcDay(childId, dateISO) {
-  recalcCheckpoint(childId, dateISO);
-  if (dayOf(childId, dateISO).finalized) regenAutoPenalties(childId, dateISO);
-}
-
-function finalizeDay(childId, dateISO) {
-  const day = dayOf(childId, dateISO);
-  day.finalized = true;
-  regenAutoPenalties(childId, dateISO);
-  recalcCheckpoint(childId, dateISO);
-  save(); render();
-}
-function reopenDay(childId, dateISO) {
-  const day = dayOf(childId, dateISO);
-  day.finalized = false;
-  day.entries = day.entries.filter(e => !e.auto); // убрать авто-штрафы и авто-чекпоинт
-  recalcCheckpoint(childId, dateISO);
-  save(); render();
-}
-
-// при старте: закрываем незакрытые прошлые заполненные дни
-function autoFinalizePastDays() {
-  const today = todayISO();
-  for (const child of DB.children) {
-    for (const dateISO of Object.keys(DB.log[child.id] || {})) {
-      if (dateISO < today) {
-        const day = DB.log[child.id][dateISO];
-        if (!day.finalized && day.entries.some(e => !e.auto)) {
-          day.finalized = true;
-          regenAutoPenalties(child.id, dateISO);
-          recalcCheckpoint(child.id, dateISO);
-        }
-      }
-    }
-  }
-  save();
-}
-
-/* ============================================================
- * 6. ДЕЙСТВИЯ С ЗАПИСЯМИ
- * ============================================================ */
-function toggleTask(childId, dateISO, taskId) {
-  const day = dayOf(childId, dateISO);
-  const task = taskById(taskId);
-  if (!task) return;
-  // снять, если уже отмечено (только ручные)
-  const existing = day.entries.find(e => e.taskId === taskId && !e.auto);
-  if (existing) {
-    day.entries = day.entries.filter(e => e.id !== existing.id);
-  } else {
-    day.entries.push({
-      id: uid("e"), taskId: task.id, name: task.name, points: task.points,
-      kind: task.kind, isDaily: !!task.isDaily, ts: Date.now(),
-    });
-  }
-  recalcDay(childId, dateISO);
-  save(); render();
-}
-function addTaskOnce(childId, dateISO, taskId) {
-  const day = dayOf(childId, dateISO);
-  const task = taskById(taskId);
-  if (!task) return;
-  day.entries.push({
-    id: uid("e"), taskId: task.id, name: task.name, points: task.points,
-    kind: task.kind, isDaily: !!task.isDaily, ts: Date.now(),
-  });
-  recalcDay(childId, dateISO);
-  save(); render();
-}
-function addCustom(childId, dateISO, name, points, saveToCatalog) {
-  const day = dayOf(childId, dateISO);
-  let taskId = null, isDaily = false;
-  if (saveToCatalog) {
-    const t = { id: uid("t"), name, points: Number(points), isDaily: false, isMandatory: false, kind: KIND.TASK, childId: null };
-    DB.tasks.push(t);
-    taskId = t.id; isDaily = false;
-  }
-  day.entries.push({
-    id: uid("e"), taskId, name, points: Number(points),
-    kind: saveToCatalog ? KIND.TASK : KIND.CUSTOM, isDaily, ts: Date.now(),
-  });
-  recalcDay(childId, dateISO);
-  save(); render();
-}
-function removeEntry(childId, dateISO, entryId) {
-  const day = dayOf(childId, dateISO);
-  day.entries = day.entries.filter(e => e.id !== entryId);
-  recalcDay(childId, dateISO);
-  save(); render();
-}
-function editEntry(childId, dateISO, entryId, name, points) {
-  const day = dayOf(childId, dateISO);
-  const e = day.entries.find(x => x.id === entryId);
-  if (!e) return;
-  e.name = name;
-  e.points = Number(points);
-  // ручная правка авто-записи → делаем её «ручной», чтобы пересчёт не затёр
-  if (e.auto) e.auto = false;
-  save(); render();
-}
+function finalizeDay(childId, dateISO) { _shared.finalizeDay(DB, childId, dateISO); save(); render(); }
+function reopenDay(childId, dateISO) { _shared.reopenDay(DB, childId, dateISO); save(); render(); }
+function toggleTask(childId, dateISO, taskId) { _shared.toggleTask(DB, childId, dateISO, taskId); save(); render(); }
+function addTaskOnce(childId, dateISO, taskId) { _shared.addTaskOnce(DB, childId, dateISO, taskId); save(); render(); }
+function addCustom(childId, dateISO, name, points, saveToCatalog) { _shared.addCustom(DB, childId, dateISO, name, points, saveToCatalog); save(); render(); }
+function removeEntry(childId, dateISO, entryId) { _shared.removeEntry(DB, childId, dateISO, entryId); save(); render(); }
+function editEntry(childId, dateISO, entryId, name, points) { _shared.editEntry(DB, childId, dateISO, entryId, name, points); save(); render(); }
+function autoFinalizePastDays() { _shared.autoFinalizePastDays(DB); save(); }
 
 /* ============================================================
  * 7. DOM-УТИЛИТЫ
