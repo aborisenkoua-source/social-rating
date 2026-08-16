@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#2f7ff6"/>
+      <stop offset="1" stop-color="#155ac0"/>
+    </linearGradient>
+    <linearGradient id="star" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#ffe16b"/>
+      <stop offset="1" stop-color="#f79009"/>
+    </linearGradient>
+  </defs>
+  <!-- фон со скруглением -->
+  <rect x="2" y="2" width="60" height="60" rx="14" fill="url(#bg)"/>
+  <!-- звезда (символ рейтинга/баллов) -->
+  <path d="M32 12l6.6 13.4 14.8 2.1-10.7 10.4 2.5 14.7L32 45.9 18.8 52.6l2.5-14.7L10.6 27.5l14.8-2.1z"
+        fill="url(#star)" stroke="#b45309" stroke-width="1" stroke-linejoin="round"/>
+</svg>
